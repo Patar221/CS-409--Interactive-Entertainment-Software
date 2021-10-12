@@ -1,8 +1,0 @@
-﻿  main.cpp
-C:\Users\Patar\OneDrive\School\Univeristy\Current\CS 409\Assignment3\main.cpp(391,39): warning C4305: 'argument': truncation from 'const double' to 'float'
-C:\Users\Patar\OneDrive\School\Univeristy\Current\CS 409\Assignment3\main.cpp(394,40): warning C4305: 'argument': truncation from 'double' to 'float'
-C:\Users\Patar\OneDrive\School\Univeristy\Current\CS 409\Assignment3\main.cpp(397,37): warning C4305: 'argument': truncation from 'const double' to 'float'
-C:\Users\Patar\OneDrive\School\Univeristy\Current\CS 409\Assignment3\main.cpp(400,38): warning C4305: 'argument': truncation from 'double' to 'float'
-C:\Users\Patar\OneDrive\School\Univeristy\Current\CS 409\Assignment3\main.cpp(403,34): warning C4305: 'argument': truncation from 'const double' to 'float'
-C:\Users\Patar\OneDrive\School\Univeristy\Current\CS 409\Assignment3\main.cpp(406,35): warning C4305: 'argument': truncation from 'double' to 'float'
-  Assignment3.vcxproj -> C:\Users\Patar\OneDrive\School\Univeristy\Current\CS 409\Assignment3\Debug\Assignment3.exe
