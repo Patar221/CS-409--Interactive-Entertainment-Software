@@ -30,6 +30,7 @@
 #include <cassert>
 #include <cctype>
 #include <string>
+#include <iostream>
 #include <vector>
 
 #include "ObjSettings.h"
@@ -1035,6 +1036,8 @@ void SpriteFont :: load (const char* a_image,
 	assert(ObjStringParsing::isValidFilenameWithPath(a_image));
 	assert(red != green || red != blue);
 
+	static const unsigned int DUMMY_BIT_COUNT = 7;
+
 	static const float A_ZERO[4] = { 0.0f, 0.0f, 0.0f, 0.0f, };
 
 #ifdef OBJ_LIBRARY_SHADER_DISPLAY
@@ -1045,6 +1048,46 @@ void SpriteFont :: load (const char* a_image,
 
 	TextureBmp font(a_image);
 
+	if(font.isBad())
+	{
+		cerr << "Error with file \"" << a_image << "\": Using placeholders for text" << endl;
+
+		font = TextureBmp(64, 32, false);
+		for(unsigned int y = 0; y < font.getHeight(); y += 4)
+			for(unsigned int x = 0; x < font.getWidth(); x += 4)
+			{
+				unsigned int char_index = y * 16 + x;
+				unsigned char a_bits[DUMMY_BIT_COUNT];
+				for(unsigned int i = 0; i < DUMMY_BIT_COUNT; i++)
+				{
+					unsigned int bit_to_check = 0x1 << i;
+					bool is_white = (char_index & bit_to_check) != 0x0;
+					a_bits[i] = is_white ? 0x00 : 0xFF;
+				}
+
+				font.setPixel(x,     y,     a_bits[2], a_bits[2], a_bits[2]);
+				font.setPixel(x,     y + 1, a_bits[5], a_bits[5], a_bits[5]);
+				font.setPixel(x,     y + 2, 0xFF,      0xFF,      0xFF);
+				font.setPixel(x,     y + 3, red,       green,     blue);
+
+				font.setPixel(x + 1, y,     a_bits[1], a_bits[1], a_bits[1]);
+				font.setPixel(x + 1, y + 1, a_bits[4], a_bits[4], a_bits[4]);
+				font.setPixel(x + 1, y + 2, 0xFF,      0xFF,      0xFF);
+				font.setPixel(x + 1, y + 3, red,       green,     blue);
+
+				font.setPixel(x + 2, y,     a_bits[0], a_bits[0], a_bits[0]);
+				font.setPixel(x + 2, y + 1, a_bits[3], a_bits[3], a_bits[3]);
+				font.setPixel(x + 2, y + 2, a_bits[6], a_bits[6], a_bits[6]);
+				font.setPixel(x + 2, y + 3, red,       green,     blue);
+
+				font.setPixel(x + 3, y,     0x00,  0x00,  0x00);  // this row used for width
+				font.setPixel(x + 3, y + 1, 0x00,  0x00,  0x00);
+				font.setPixel(x + 3, y + 2, 0x00,  0x00,  0x00);
+				font.setPixel(x + 3, y + 3, red,   green, blue);
+			}
+	}
+
+	assert(!font.isBad());
 	assert(font.getWidth() >= 16);
 	assert(isAPowerOf2(font.getWidth()));
 	assert(font.getHeight() == font.getWidth() || font.getHeight() == font.getWidth() / 2);
@@ -1121,9 +1164,9 @@ void SpriteFont :: load (const char* a_image,
 
 				unsigned int font_x = base_x + x;
 
-				unsigned char r = font.getRed(font_x, font_y);
+				unsigned char r = font.getRed  (font_x, font_y);
 				unsigned char g = font.getGreen(font_x, font_y);
-				unsigned char b = font.getBlue(font_x, font_y);
+				unsigned char b = font.getBlue (font_x, font_y);
 
 				if(r == red && g == green && b == blue)
 				{
@@ -1172,7 +1215,7 @@ void SpriteFont :: load (const char* a_image,
 #endif
 
 		// calculate the character width from the first row
-		ma_character_width[i] = 0;
+		ma_character_width[i] = m_image_size;
 		for(unsigned int x2 = 0; x2 <= m_image_size; x2++)
 		{
 			unsigned int this_x = base_x + x2;
@@ -1192,7 +1235,7 @@ void SpriteFont :: load (const char* a_image,
 	setTabWidthToDefault();
 
 	// calculate the font height from the first column of the first character
-	m_character_height = 0;
+	m_character_height = m_image_size;
 	for(unsigned int y2 = 0; y2 <= m_image_size; y2++)
 	{
 		if(y2 >= m_image_size ||
@@ -1304,7 +1347,7 @@ void SpriteFont :: setUpForDrawing (double depth,
 	g_vao.bind();
 
 #else
-	glPushAttrib(GL_COLOR_BUFFER_BIT | GL_CURRENT_BIT | GL_POLYGON_BIT | GL_TEXTURE_BIT | GL_LIGHTING_BIT);
+	glPushAttrib(GL_COLOR_BUFFER_BIT | GL_CURRENT_BIT | GL_POLYGON_BIT | GL_TEXTURE_BIT | GL_LIGHTING_BIT | GL_ENABLE_BIT);
 		glDepthFunc(GL_LEQUAL);
 		glDisable(GL_CULL_FACE);
 		glDisable(GL_LIGHTING);
@@ -1471,6 +1514,13 @@ void SpriteFont :: unsetUpForDrawing () const
 	assert(isInitialized());
 
 #ifdef OBJ_LIBRARY_SHADER_DISPLAY
+	// we could disable these, but we don't know what they should be
+
+	//glDepthFunc(GL_LEQUAL);
+	//glEnable(GL_BLEND);
+	//glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	//glEnable(GL_TEXTURE_2D);
+
 	g_vao.bindNone();  // prevent accidental changes
 #else
 	glPopAttrib();

@@ -1347,6 +1347,21 @@ Released to CS809
 
 
 
+2021 October 2
+--------------
+
+1. Changed SpriteFont::load to use a placeholder image if the spritefont could not be loaded
+
+
+
+2021 October 8
+--------------
+
+1. Fixed SpriteFont::load to handle character images all the way to the edge of the available square
+2. Fixed SpriteFont::setUpForDrawing so GL_TEXTURE_2D will be disabled
+
+
+
 
 
 Changes to Make
@@ -1366,6 +1381,7 @@ Vector2/3
 
 TODO: Move isOrthogonal, etc. to non-inline functions?  I probably need some sort of profiling to know if this is a good idea.
 TODO: Add variants of rotateTowardsAroundAxis to Vector3 for principle axes?  Do we need these?
+TODO: Reduce the number of square random area functions: no "inclusive"
 
 
 

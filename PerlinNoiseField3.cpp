@@ -345,7 +345,7 @@ float PerlinNoiseField3 :: interpolate (float v0,
 ObjLibrary::Vector3 PerlinNoiseField3 :: lattice (int x, int y, int z) const
 {
 	unsigned int value1 = pseudorandom(x, y, z);
-	unsigned int value2 = pseudorandom(x + 1, y + 1, z + 1);  // a different psuedorandom seed
+	unsigned int value2 = pseudorandom(x + 1, y + 1, z + 1);  //  <|>
 	return Vector3::getPseudorandomUnitVector(unsignedIntTo01(value1),
 	                                          unsignedIntTo01(value2));
 }

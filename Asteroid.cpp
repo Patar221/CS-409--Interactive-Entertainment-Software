@@ -15,15 +15,15 @@
 
 #include "CoordinateSystem.h"
 #include "PerlinNoiseField3.h"
+#include "Entity.h"
 
 using namespace ObjLibrary;
 namespace
 {
 	const double PI     = 3.1415926535897932384626433832795;
 	const double TWO_PI = PI * 2.0;
+	const double DENSITY = 2710.0;  // kg / m^3 (type S asteroid)
 	const double ROTATION_RATE_MAX = 0.25;  // radians / second
-	const double GRAVITATIONAL_CONSTANT = 6.67408e-11;
-	const double BLACK_HOLE_MASS = 5.0e16;
 
 	const double NOISE_AMPLITUDE  = 1.0;
 	const double NOISE_OFFSET_MAX = 1.0e4;
@@ -42,7 +42,7 @@ namespace
 
 bool Asteroid :: isUnitSphere (const ObjLibrary::ObjModel& base_model)
 {
-	static const double TOLERANCE  = 1.0e-3;
+	static const double TOLERANCE = 1.0e-3;
 
 	for(unsigned int v = 0; v < base_model.getVertexCount(); v++)
 	{
@@ -53,6 +53,15 @@ bool Asteroid :: isUnitSphere (const ObjLibrary::ObjModel& base_model)
 		assert(!vertex.isZero());
 	}
 	return true;
+}
+
+double Asteroid :: calculateMass (double inner_radius,
+                                  double outer_radius)
+{
+	assert(inner_radius >= 0.0);
+	assert(inner_radius <= outer_radius);
+
+	return PI * outer_radius * outer_radius * inner_radius * DENSITY / 6.0;
 }
 
 ObjLibrary::DisplayList Asteroid :: createDisplayList (const ObjLibrary::ObjModel& base_model,
@@ -91,28 +100,35 @@ ObjLibrary::DisplayList Asteroid :: createDisplayList (const ObjLibrary::ObjMode
 
 
 Asteroid :: Asteroid ()
-		: Entity{}
+		: Entity()
 		, m_inner_radius(0.0)
-		, m_outer_radius(0.0)
+		, m_random_noise_offset()
 		, m_rotation_axis(Vector3(1.0, 0.0, 0.0))
 		, m_rotation_rate(0.0)
-		, m_random_noise_offset()
-		, m_display_list()
 {
+	assert(!isInitialized());
 	assert(invariant());
 }
 
-Asteroid :: Asteroid (const ObjLibrary::Vector3& position, double inner_radius, double outer_radius, const ObjLibrary::ObjModel& base_model)
-		: Entity{ CoordinateSystem(position, Vector3::UNIT_X_PLUS, Vector3::UNIT_Y_PLUS) }  // rotated randomly below
+static Vector3 g_noise_offset;  // to copy value out of parameter into member field initialized after
+Asteroid :: Asteroid (const ObjLibrary::Vector3& position,
+                      const ObjLibrary::Vector3& velocity,
+                      double inner_radius,
+                      double outer_radius,
+                      const ObjLibrary::ObjModel& base_model)
+		: Entity(position,
+		         velocity,
+		         calculateMass(inner_radius, outer_radius),
+		         outer_radius,
+		         createDisplayList(base_model,
+		                           inner_radius,
+		                           outer_radius,
+		                           g_noise_offset = Vector3::getRandomSphereVector() * NOISE_OFFSET_MAX),
+		         1.0)
 		, m_inner_radius(inner_radius)
-		, m_outer_radius(outer_radius)
+		, m_random_noise_offset(g_noise_offset)  // copy from value set above
 		, m_rotation_axis(Vector3::getRandomUnitVector())
 		, m_rotation_rate(std::min(random01(), random01()) * ROTATION_RATE_MAX)  // mostly rotate slowly
-		, m_random_noise_offset(Vector3::getRandomSphereVector() * NOISE_OFFSET_MAX)
-		, m_display_list(createDisplayList(base_model,
-									   inner_radius,
-									   outer_radius,
-									   m_random_noise_offset))
 {
 	assert(inner_radius >= 0.0);
 	assert(inner_radius <= outer_radius);
@@ -126,32 +142,11 @@ Asteroid :: Asteroid (const ObjLibrary::Vector3& position, double inner_radius, 
 	m_coords.rotateAroundUp     (random01() * TWO_PI);
 	m_coords.rotateAroundRight  (random01() * TWO_PI);
 
-	computeMass();
-
-	//Calculate tanget vector
-	Vector3 randomVector = Vector3::getRandomUnitVector();
-	Vector3 rejection = randomVector.getRejectionSafe(Vector3(0.0, 0.0, 0.0) - m_coords.getPosition());
-	Vector3 perpendicular = rejection.getNormalizedSafe();
-
-	float circularSpeedMultiplyer = rand() % (100 + 1);
-	circularSpeedMultiplyer /= 100;
-	circularSpeedMultiplyer += 0.5;
-
-	velocity = perpendicular * computeCircularSpeed() * circularSpeedMultiplyer;
-
+	assert(isInitialized());
 	assert(invariant());
 }
 
-void Asteroid::draw() const
-{
-	assert(isInitialized());
 
-	glPushMatrix();
-	m_coords.applyDrawTransformations();
-		assert(m_display_list.isReady());
-		m_display_list.draw();
-	glPopMatrix();
-}
 
 void Asteroid :: drawAxes (double length) const
 {
@@ -174,30 +169,29 @@ void Asteroid :: drawAxes (double length) const
 	glPopMatrix();
 }
 
-void Asteroid::update(const double deltaTime)
+
+
+void Asteroid :: updatePhysics (double delta_time,
+                                const Entity& black_hole)
 {
 	assert(isInitialized());
+	assert(delta_time > 0.0);
 
-	Entity::update(deltaTime);
+	Entity::updatePhysics(delta_time, black_hole);
 
-	double rotation_radians = m_rotation_rate / 50.0;  // fix when we have frame rate control
+	double rotation_radians = m_rotation_rate * delta_time;
 	m_coords.rotateAroundArbitrary(m_rotation_axis, rotation_radians);
 
 	assert(invariant());
 }
 
-void Asteroid::computeMass()
-{
-	mass = (PI / 6) * (m_outer_radius * m_outer_radius) * m_inner_radius * 2710;
-}
 
 
 bool Asteroid :: invariant () const
 {
 	if(m_inner_radius < 0.0) return false;
-	if(m_inner_radius > m_outer_radius) return false;
+	if(m_inner_radius > getRadius()) return false;
 	if(!m_rotation_axis.isUnit()) return false;
 	if(m_rotation_rate < 0.0) return false;
-	if(m_display_list.isPartial()) return false;
 	return true;
 }

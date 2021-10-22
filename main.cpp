@@ -4,9 +4,10 @@
 
 #include <cassert>
 #include <cctype>  // for toupper
+#include <sstream>
+#include <iomanip>
 #include <vector>
 #include <algorithm>  // for min/max
-#include <sstream>
 #include <chrono>
 
 #include "GetGlut.h"
@@ -17,23 +18,25 @@
 #include "ObjLibrary/DisplayList.h"
 #include "ObjLibrary/SpriteFont.h"
 
+#include "Gravity.h"
 #include "CoordinateSystem.h"
 #include "PerlinNoiseField3.h"
 #include "Entity.h"
+#include "BlackHole.h"
 #include "Asteroid.h"
 #include "Spaceship.h"
-
 
 using namespace std;
 using namespace chrono;
 using namespace ObjLibrary;
 
-//Function Prototypes
-void init();
 void initDisplay ();
 void loadModels ();
+void initEntities ();
 void initAsteroids ();
-void initCamera ();
+void initPlayer ();
+double getCircularOrbitSpeed (double distance);
+void initTime ();
 
 unsigned char fixShift (unsigned char key);
 void keyboardDown (unsigned char key, int x, int y);
@@ -42,23 +45,21 @@ void specialDown (int special_key, int x, int y);
 void specialUp (int special_key, int x, int y);
 
 void update ();
-void handleInput ();
-void updateAsteroids ();
+void handleInput (double delta_time);
+void updatePhysics (double delta_time);
 
 void reshape (int w, int h);
 void display ();
 void drawSkybox ();
-void drawAsteroids (bool is_show_debug);
-void drawBlackHole ();
-
-void drawShip();
-
-void drawOverlays();
-void doGameUpdates();
-void futurePath();
+void drawEntities (bool is_show_debug);
+void drawOverlays ();
 
 namespace
 {
+	int window_width  = 640;
+	int window_height = 480;
+	SpriteFont font;
+
 	const unsigned int KEY_PRESSED_COUNT = 0x100 + 5;
 	const unsigned int KEY_PRESSED_RIGHT = 0x100 + 0;
 	const unsigned int KEY_PRESSED_LEFT  = 0x100 + 1;
@@ -67,47 +68,49 @@ namespace
 	const unsigned int KEY_PRESSED_END   = 0x100 + 4;
 	bool key_pressed[KEY_PRESSED_COUNT];
 
+	const int PHYSICS_PER_SECOND = 60;
+	const double SECONDS_PER_PHYSICS = 1.0 / PHYSICS_PER_SECOND;
+	const microseconds PHYSICS_MICROSECONDS(1000000 / PHYSICS_PER_SECOND);
+	const unsigned int MAXIMUM_UPDATES_PER_FRAME = 10;
+	const unsigned int FAST_PHYSICS_FACTOR = 10;
+	const double SIMULATE_SLOW_SECONDS = 0.05;
+
+	system_clock::time_point next_update_time;
+	const unsigned int SMOOTH_RATE_COUNT = MAXIMUM_UPDATES_PER_FRAME * 2 + 2;
+	system_clock::time_point old_frame_times [SMOOTH_RATE_COUNT];
+	system_clock::time_point old_update_times[SMOOTH_RATE_COUNT];
+	unsigned int next_old_update_index = 0;
+	unsigned int next_old_frame_index  = 0;
+
+	bool g_is_paused     = false;
 	bool g_is_show_debug = false;
 
 	const unsigned int ASTEROID_COUNT = 100;
 
 	const double BLACK_HOLE_RADIUS  =    50.0;
 	const double DISK_RADIUS        = 10000.0;
+	const double PLAYER_RADIUS      =     4.0;
+
+	static const double BLACK_HOLE_MASS = 5.0e16;  // kg
+	static const double PLAYER_MASS     = 1000.0;  // kg
 
 	DisplayList g_skybox_display_list;
 	DisplayList g_disk_display_list;
-	ObjModel shipModel;
+	DisplayList g_player_display_list;
+
+	BlackHole g_black_hole;
 
 	static const unsigned int ASTEROID_MODEL_COUNT = 25;
 	ObjModel ga_asteroid_models[ASTEROID_MODEL_COUNT];
 
 	vector<Asteroid> gv_asteroids;
 
-	Spaceship player;
+	const double  CAMERA_BACK_DISTANCE  =   20.0;
+	const double  CAMERA_UP_DISTANCE    =    5.0;
+	const double  PLAYER_START_DISTANCE = 1000.0;
+	const Vector3 PLAYER_START_FORWARD(1.0, 0.0, 0.0);
+	Spaceship g_player;
 
-	const double MOVE_FAST_RATE = 100.0;
-	const double MANOEUVER_RATE = 1.0;
-	const double TURN_RATE = 0.02;
-	CoordinateSystem g_camera;
-
-	system_clock::time_point start_time;
-	system_clock::time_point last_frame_time;
-	float smoothed_frames_per_second = 60;
-
-	int update_count = 0;
-
-	const int UPDATES_PER_SECOND = 60;
-	const microseconds DELTA_TIME(1000000 / UPDATES_PER_SECOND);
-
-	system_clock::time_point next_update_time;
-
-	const unsigned int MAXIMUM_UPDATES_PER_FRAME = 10;
-
-	int window_width = 640;
-	int window_height = 480;
-	SpriteFont font;
-
-	int speedUp = 1;
 
 
 	double random01 ()
@@ -128,12 +131,12 @@ namespace
 
 int main (int argc, char* argv[])
 {
-	glutInitWindowSize(window_width, window_height);
+	glutInitWindowSize(640, 480);
 	glutInitWindowPosition(0, 0);
 
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_DEPTH | GLUT_RGB);
-	glutCreateWindow("CS 409 Assignment 2 Solution");
+	glutCreateWindow("CS 409 Assignment 3 Solution");
 	glutKeyboardFunc(keyboardDown);
 	glutKeyboardUpFunc(keyboardUp);
 	glutSpecialFunc(specialDown);
@@ -142,29 +145,17 @@ int main (int argc, char* argv[])
 	glutReshapeFunc(reshape);
 	glutDisplayFunc(display);
 
-	PerlinNoiseField3 pnf;
-	pnf.printPerlin(40, 60, 0.1f);
+	//PerlinNoiseField3 pnf;
+	//pnf.printPerlin(40, 60, 0.1f);
 
-	init();
+	initDisplay();
+	loadModels();
+	initEntities();
+	initTime();  // should be last
 
 	glutMainLoop();
 
 	return 1;
-}
-
-void init()
-{
-	initDisplay();
-	loadModels();
-	initAsteroids();
-	initCamera();
-
-	font.load("Font.bmp");
-
-	start_time = system_clock::now();
-	last_frame_time = start_time;
-
-	next_update_time = start_time;
 }
 
 void initDisplay ()
@@ -182,19 +173,35 @@ void initDisplay ()
 
 void loadModels ()
 {
-	g_skybox_display_list = ObjModel("Models/Skybox.obj").getDisplayList();
-	g_disk_display_list   = ObjModel("Models/Disk.obj")  .getDisplayList();
-	shipModel.load("Models/Sagittarius.obj");
-	player.setModel(shipModel);
+	// change this to an absolute path on Mac computers
+	string path = "Models/";
+
+	g_skybox_display_list  = ObjModel(path + "Skybox.obj")     .getDisplayList();
+	g_disk_display_list    = ObjModel(path + "Disk.obj")       .getDisplayList();
+	g_player_display_list  = ObjModel(path + "Sagittarius.obj").getDisplayList();
 
 	assert(ASTEROID_MODEL_COUNT <= 26);  // only 26 letters to use
 	for(unsigned m = 0; m < ASTEROID_MODEL_COUNT; m++)
 	{
-		string filename = "Models/AsteroidA.obj";
-		assert(filename[15] == 'A');
-		filename[15] = 'A' + m;
-		ga_asteroid_models[m].load(filename);
+		string filename = "AsteroidA.obj";
+		assert(filename[8] == 'A');
+		filename[8] = 'A' + m;
+		ga_asteroid_models[m].load(path + filename);
 	}
+
+	font.load(path + "Font.bmp");
+}
+
+void initEntities ()
+{
+	// remove existing entities (if any)
+	gv_asteroids.clear();
+
+	// create new entities
+	g_black_hole = BlackHole(Vector3::ZERO, BLACK_HOLE_MASS,
+	                         BLACK_HOLE_RADIUS, DISK_RADIUS, g_disk_display_list);
+	initAsteroids();
+	initPlayer();
 }
 
 void initAsteroids ()
@@ -216,6 +223,14 @@ void initAsteroids ()
 		double distance = random2(DISTANCE_MIN, DISTANCE_MAX);
 		Vector3 position = Vector3::getRandomUnitVector() * distance;
 
+		// choose starting velocity
+		double speed_circle = getCircularOrbitSpeed(distance);
+		double speed_factor = random2(SPEED_FACTOR_MIN, SPEED_FACTOR_MAX);
+		double speed = speed_circle * speed_factor;
+		Vector3 velocity = Vector3::getRandomUnitVector().getRejection(position);  // tangent to gravity
+		assert(!velocity.isZero());
+		velocity.setNorm(speed);
+
 		// mostly smaller asteroids
 		double outer_radius = min(random2(OUTER_RADIUS_MIN, OUTER_RADIUS_MAX),
 		                          random2(OUTER_RADIUS_MIN, OUTER_RADIUS_MAX));
@@ -227,18 +242,48 @@ void initAsteroids ()
 		assert(model_index < ASTEROID_MODEL_COUNT);
 		assert(!ga_asteroid_models[model_index].isEmpty());
 
-		gv_asteroids.push_back(Asteroid(position,
+		gv_asteroids.push_back(Asteroid(position, velocity,
 		                                inner_radius, outer_radius,
 		                                ga_asteroid_models[model_index]));
 	}
 	assert(gv_asteroids.size() == ASTEROID_COUNT);
 }
 
-void initCamera ()
+void initPlayer ()
 {
-	g_camera = CoordinateSystem(Vector3(0, 0, 0),  // position
-	                            Vector3(1, 0, 0),  // forward vector
-	                            Vector3(0, 1, 0)); // up vector
+	const double PLAYER_FORWARD_POWER  = 500.0;  // m/s^2
+	const double PLAYER_MANEUVER_POWER =  50.0;  // m/s^2
+	const double PLAYER_ROTATION_RATE  =   3.0;  // radians / second
+
+	double  player_speed    = getCircularOrbitSpeed(PLAYER_START_DISTANCE);
+	Vector3 player_position(0.0, PLAYER_START_DISTANCE, 0.0);
+	Vector3 player_velocity = PLAYER_START_FORWARD * player_speed;
+
+	assert(g_player_display_list.isReady());
+	g_player = Spaceship(player_position, player_velocity,
+	                     PLAYER_MASS, PLAYER_RADIUS,
+	                     PLAYER_FORWARD_POWER, PLAYER_MANEUVER_POWER, PLAYER_ROTATION_RATE,
+	                     g_player_display_list);
+}
+
+double getCircularOrbitSpeed (double distance)
+{
+	assert(distance > 0.0);
+
+	return sqrt(GRAVITY * g_black_hole.getMass() / distance);
+}
+
+void initTime ()
+{
+	system_clock::time_point start_time = system_clock::now();
+	next_update_time = start_time;
+
+	for(unsigned int i = 1; i < SMOOTH_RATE_COUNT; i++)
+	{
+		unsigned int steps_back = SMOOTH_RATE_COUNT - i;
+		old_update_times[i] = start_time - PHYSICS_MICROSECONDS * steps_back;
+		old_frame_times [i] = start_time - PHYSICS_MICROSECONDS * steps_back;
+	}
 }
 
 
@@ -326,98 +371,110 @@ void specialUp (int special_key, int x, int y)
 
 void update ()
 {
-	handleInput();
-
-	update_count++;
-	next_update_time += DELTA_TIME;
-
 	system_clock::time_point current_time = system_clock::now();
-	for (unsigned int i = 0; i < MAXIMUM_UPDATES_PER_FRAME && next_update_time < current_time; i++)
+	for(unsigned int i = 0; i < MAXIMUM_UPDATES_PER_FRAME &&
+	                        next_update_time < current_time; i++)
 	{
-		doGameUpdates();
-		update_count++;
-		next_update_time += DELTA_TIME;
+		double delta_time = SECONDS_PER_PHYSICS;
+		if(g_is_paused)
+			delta_time = 0.0;
+		else if(key_pressed['g'])
+			delta_time *= FAST_PHYSICS_FACTOR;
+
+		handleInput(delta_time);
+		if(delta_time > 0.0)
+		{
+			updatePhysics(delta_time);
+
+			old_update_times[next_old_update_index % SMOOTH_RATE_COUNT] = current_time;
+			next_old_update_index++;
+
+			if(key_pressed['u'])
+				sleep(SIMULATE_SLOW_SECONDS);
+		}
+
+		next_update_time += PHYSICS_MICROSECONDS;
 		current_time = system_clock::now();
 	}
 
-	if (current_time < next_update_time)
+	if(current_time < next_update_time)
 	{
 		system_clock::duration sleep_time = next_update_time - current_time;
 		sleep(duration<double>(sleep_time).count());
 	}
 
-	doGameUpdates();
-	
-	//sleep(1.0 / 60.0);
-	sleep(duration<double>(DELTA_TIME).count());
-
 	glutPostRedisplay();
 }
 
-void handleInput ()
+void handleInput (double delta_time)
 {
 	//
-	//  Move camera
+	//  Accelerate player - depends on physics rate
 	//
 
 	if(key_pressed[' '])
-		player.accelerateForwardQuick(1, 1.0 * speedUp / UPDATES_PER_SECOND);
-	if (key_pressed[';'] || key_pressed['\''])  // either key
-		player.accelerateForward(1, 1.0 * speedUp / UPDATES_PER_SECOND);
+		g_player.thrustMainEngine(delta_time);
+	if(key_pressed[';'] || key_pressed['\''])  // either key
+		g_player.thrustManoeuver(delta_time,  g_player.getForward());
 	if(key_pressed['/'])
-		player.accelerateForward(-1, 1.0 * speedUp / UPDATES_PER_SECOND);
+		g_player.thrustManoeuver(delta_time, -g_player.getForward());
 	if(key_pressed['w'] || key_pressed['e'])  // either key
-		player.accelerateUp(1, 1.0 * speedUp / UPDATES_PER_SECOND);
+		g_player.thrustManoeuver(delta_time,  g_player.getUp());
 	if(key_pressed['s'])
-		player.accelerateUp(-1, 1.0 * speedUp / UPDATES_PER_SECOND);
+		g_player.thrustManoeuver(delta_time, -g_player.getUp());
 	if(key_pressed['d'])
-		player.accelerateRight(1, 1.0 * speedUp / UPDATES_PER_SECOND);
+		g_player.thrustManoeuver(delta_time,  g_player.getRight());
 	if(key_pressed['a'])
-		player.accelerateRight(-1, 1.0 * speedUp / UPDATES_PER_SECOND);
+		g_player.thrustManoeuver(delta_time, -g_player.getRight());
 
 	//
-	//  Rotate camera
+	//  Rotate player - independant of physics rate
 	//
 
 	if(key_pressed['.'])
-		player.rotateAroundForward(TURN_RATE);
+		g_player.rotateAroundForward(SECONDS_PER_PHYSICS, true);
 	if(key_pressed[','])
-		player.rotateAroundForward(-TURN_RATE);
+		g_player.rotateAroundForward(SECONDS_PER_PHYSICS, false);
 	if(key_pressed[KEY_PRESSED_UP])
-		player.rotateAroundRight(TURN_RATE);
+		g_player.rotateAroundRight(SECONDS_PER_PHYSICS, false);
 	if(key_pressed[KEY_PRESSED_DOWN])
-		player.rotateAroundRight(-TURN_RATE);
+		g_player.rotateAroundRight(SECONDS_PER_PHYSICS, true);
 	if(key_pressed[KEY_PRESSED_LEFT])
-		player.rotateAroundUp(TURN_RATE);
+		g_player.rotateAroundUp(SECONDS_PER_PHYSICS, false);
 	if(key_pressed[KEY_PRESSED_RIGHT])
-		player.rotateAroundUp(-TURN_RATE);
+		g_player.rotateAroundUp(SECONDS_PER_PHYSICS, true);
 
 	//
 	//  Other
 	//
 
+	// 'g' is handled in update
+	if(key_pressed['p'])
+	{
+		g_is_paused = !g_is_paused;
+		key_pressed['p'] = false;  // only once per keypress
+	}
 	if(key_pressed['t'])
 	{
 		g_is_show_debug = !g_is_show_debug;
 		key_pressed['t'] = false;  // only once per keypress
 	}
-	if (key_pressed['g'])
-	{
-		speedUp = 10;
-	} else
-		speedUp = 1;
+	// 'u' is handled in update
+	// 'y' is handled in draw
 	if(key_pressed[KEY_PRESSED_END])
 	{
-		initAsteroids();
-		initCamera();
+		initEntities();
 		key_pressed[KEY_PRESSED_END] = false;  // only once per keypress
 	}
 }
 
-void updateAsteroids ()
+void updatePhysics (double delta_time)
 {
 	for(unsigned a = 0; a < gv_asteroids.size(); a++)
-		gv_asteroids[a].update(1.0 * speedUp / UPDATES_PER_SECOND);
+		gv_asteroids[a].updatePhysics(delta_time, g_black_hole);
+
+	if(g_player.isAlive())
+		g_player.updatePhysics(delta_time, g_black_hole);
 }
 
 
@@ -426,7 +483,7 @@ void reshape (int w, int h)
 {
 	glViewport (0, 0, w, h);
 
-	window_width = w;
+	window_width  = w;
 	window_height = h;
 
 	glMatrixMode(GL_PROJECTION);
@@ -439,22 +496,31 @@ void reshape (int w, int h)
 
 void display ()
 {
-	if (key_pressed['y'])
-		sleep(1 / 10.0);
-
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	// clear the screen - any drawing before here will not display
 
 	glLoadIdentity();
-	g_camera.setupCamera();
+	g_player.setupFollowCamera(CAMERA_BACK_DISTANCE, CAMERA_UP_DISTANCE);
 	// camera is set up - any drawing before here will display incorrectly
 
 	drawSkybox();  // has to be first
-	drawAsteroids(g_is_show_debug);
-	drawShip();
+	drawEntities(g_is_show_debug);
 	drawOverlays();
-	futurePath();
-	drawBlackHole(); //Has to be last
+
+	glBegin(GL_LINES);
+		glColor3d(1.0, 0.0, 0.0);
+		glVertex3d(0.0, 1.0, 0.0);
+		glVertex3d(1000.0, 1.0, 0.0);
+		glColor3d(0.0, 0.0, 0.0);
+		glVertex3d(0.0, 1.0, 0.0);
+		glVertex3d(0.0, 1000.0, 0.0);
+		glColor3d(0.0, 0.0, 1.0);
+		glVertex3d(0.0, 1.0, 0.0);
+		glVertex3d(0.0, 1.0, 1000.0);
+	glEnd();
+
+	if(key_pressed['y'])
+		sleep(SIMULATE_SLOW_SECONDS);  // simulate slow drawing
 
 	// send the current image to the screen - any drawing after here will not display
 	glutSwapBuffers();
@@ -463,9 +529,8 @@ void display ()
 void drawSkybox ()
 {
 	glPushMatrix();
-		glTranslated(g_camera.getPosition().x,
-		             g_camera.getPosition().y,
-		             g_camera.getPosition().z);
+		Vector3 camera = g_player.getFollowCameraPosition(CAMERA_BACK_DISTANCE, CAMERA_UP_DISTANCE);
+		glTranslated(camera.x, camera.y, camera.z);
 		glRotated(90.0, 0.0, 0.0, 1.0);  // line band of clouds on skybox up with accretion disk
 
 		glDepthMask(GL_FALSE);
@@ -474,8 +539,11 @@ void drawSkybox ()
 	glPopMatrix();
 }
 
-void drawAsteroids (bool is_show_debug)
+void drawEntities (bool is_show_debug)
 {
+	static const Vector3 PLAYER_COLOUR(0.0, 0.0, 1.0);
+
+	const Vector3& player_position = g_player.getPosition();
 	for(unsigned a = 0; a < gv_asteroids.size(); a++)
 	{
 		const Asteroid& asteroid = gv_asteroids[a];
@@ -484,78 +552,61 @@ void drawAsteroids (bool is_show_debug)
 		if(is_show_debug)
 			asteroid.drawAxes(asteroid.getRadius() + 50.0);
 	}
+
+	if(g_player.isAlive())
+	{
+		g_player.draw();
+		g_player.drawPath(g_black_hole, 1000, PLAYER_COLOUR);
+	}
+
+	g_black_hole.draw();  // must be last
 }
 
-void drawBlackHole ()
+void drawOverlays ()
 {
-	// draw the black hole
-	glPushMatrix();
-		// don't move from origin
-		glColor3f(0.0f, 0.0f, 0.0f);
-		glutSolidSphere(BLACK_HOLE_RADIUS, 40, 30);
-	glPopMatrix();
-
-	// draw the accretion disk
-	glPushMatrix();
-		// don't move from origin
-		glScaled(DISK_RADIUS, DISK_RADIUS, DISK_RADIUS);
-		g_disk_display_list.draw();  // has to be last because of transparency
-	glPopMatrix();
-}
-
-void drawShip()
-{
-	player.draw();
-}
-
-void drawOverlays() {
-	system_clock::time_point current_time = system_clock::now();
-	float game_duration = duration<float>(current_time - start_time).count();
-
-	float average_updates_per_second = update_count / game_duration;
-	stringstream average_update_rate_ss;
-	average_update_rate_ss << "Physics Rate: " << average_updates_per_second;
-	
-	float frame_duration = duration<float>(current_time - last_frame_time).count();
-	float instantaneous_frames_per_second = 1.0f / frame_duration;
-	smoothed_frames_per_second = 0.95f * smoothed_frames_per_second + 0.05f * instantaneous_frames_per_second;
-	stringstream smoothed_frame_rate_ss;
-	smoothed_frame_rate_ss << "Frame Rate: " << smoothed_frames_per_second;
-	last_frame_time = current_time;
-
 	SpriteFont::setUp2dView(window_width, window_height);
 
-	font.draw(smoothed_frame_rate_ss.str(), 16, 120);
-	font.draw(average_update_rate_ss.str(), 16, 176);
+	system_clock::time_point current_time = system_clock::now();
+
+	// display frame rate
+
+	unsigned int oldest_frame_index = (next_old_frame_index + 1) % SMOOTH_RATE_COUNT;
+	duration<float> total_frame_duration = current_time - old_frame_times[oldest_frame_index];
+	float average_frame_duration = total_frame_duration.count() / (SMOOTH_RATE_COUNT - 1);
+	float average_frame_rate = 1.0f / average_frame_duration;
+
+	stringstream smoothed_frame_rate_ss;
+	smoothed_frame_rate_ss << "Frame rate:\t" << setprecision(3) << average_frame_rate;
+	font.draw(smoothed_frame_rate_ss.str(), 16, 16);
+
+	// update frame rate values
+
+	old_frame_times[next_old_frame_index % SMOOTH_RATE_COUNT] = current_time;
+	next_old_frame_index++;
+
+	// display physics rate
+
+	unsigned int oldest_update_index = (next_old_update_index + 1) % SMOOTH_RATE_COUNT;
+	duration<float> total_update_duration = current_time - old_update_times[oldest_update_index];
+	float average_update_duration = total_update_duration.count() / (SMOOTH_RATE_COUNT - 1);
+	float average_update_rate = 1.0f / average_update_duration;
+
+	stringstream smoothed_update_rate_ss;
+	smoothed_update_rate_ss << "Update rate:\t" << setprecision(3) << average_update_rate;
+	font.draw(smoothed_update_rate_ss.str(), 16, 40);
+
+	// display control keys
+
+	unsigned char byte_g = key_pressed['g'] ? 0x00 : 0xFF;
+	unsigned char byte_t = g_is_show_debug  ? 0x00 : 0xFF;
+	unsigned char byte_y = key_pressed['y'] ? 0x00 : 0xFF;
+	unsigned char byte_u = key_pressed['u'] ? 0x00 : 0xFF;
+
+	font.draw("[G]:\tAccelerate time",  window_width - 256,  16, byte_g, 0xFF, byte_g);
+	font.draw("[T]:\tToggle debugging", window_width - 256,  48, byte_t, 0xFF, byte_t);
+	font.draw("[Y]:\tSlow display",     window_width - 256,  80, byte_y, 0xFF, byte_y);
+	font.draw("[U]:\tSlow physics",     window_width - 256, 112, byte_u, 0xFF, byte_u);
 
 	SpriteFont::unsetUp2dView();
 }
 
-void doGameUpdates()
-{
-	updateAsteroids();
-
-	player.update(1.0 * speedUp / UPDATES_PER_SECOND);
-	g_camera = player.updateCamera();
-
-	if (key_pressed['u'])
-		sleep(1 / 10.0);
-}
-
-void futurePath()
-{
-	Spaceship ship = player;
-
-	glColor3d(0.0, 0.0, 1.0);
-	glBegin(GL_LINE_STRIP);
-
-	for (int i = 0; i < 100; i++)
-	{
-		Vector3 tempPosition = ship.getPosition();
-
-		glVertex3d(tempPosition.x, tempPosition.y, tempPosition.z);
-		ship.update(1);
-	}
-
-	glEnd();
-}

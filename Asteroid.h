@@ -6,13 +6,14 @@
 
 #pragma once
 
-#include "Entity.h"
+#include <cassert>
 
 #include "ObjLibrary/Vector3.h"
 #include "ObjLibrary/ObjModel.h"
 #include "ObjLibrary/DisplayList.h"
 
 #include "CoordinateSystem.h"
+#include "Entity.h"
 
 
 
@@ -33,8 +34,13 @@
 //    a higher-polygon sphere for the base model will produce a
 //    higher-polygon asteroid.
 //
+//  Class Invariant:
+//    <1> m_inner_radius >= 0.0
+//    <2> m_inner_radius <= getRadius()
+//    <3> m_rotation_axis.isUnit()
+//    <4> m_rotation_rate >= 0.0
 //
-class Asteroid: public Entity
+class Asteroid : public Entity
 {
 public:
 //
@@ -51,6 +57,23 @@ public:
 //  Side Effect: N/A
 //
 	static bool isUnitSphere (const ObjLibrary::ObjModel& base_model);
+
+//
+//  Class Function: calculateMass
+//
+//  Purpose: To determine the mass for an Asteroid with the
+//           specified inner and outer radii.
+//  Parameter(s):
+//    <1> inner_radius: The inner asteroid radius
+//    <2> outer_radius: The outer asteroid radius
+//  Preconditions:
+//    <1> inner_radius >= 0.0
+//    <2> inner_radius <= outer_radius
+//  Returns: The radius of the asteroid.
+//  Side Effect: N/A
+//
+	static double calculateMass (double inner_radius,
+	                             double outer_radius);
 
 //
 //  Class Function: createDisplayList
@@ -95,23 +118,26 @@ public:
 //           position, inner and out radii, and base model file.
 //  Parameter(s):
 //    <1> position: The position of the asteroid origin
-//    <2> inner_radius: The inner asteroid radius
-//    <3> outer_radius: The outer asteroid radius
-//    <4> base_model: The base ObjModel that wil be modified to
+//    <2> velocity: The velocity of the asteroid
+//    <3> inner_radius: The inner asteroid radius
+//    <4> outer_radius: The outer asteroid radius
+//    <5> base_model: The base ObjModel that wil be modified to
 //                    produce the asteroid
 //  Preconditions: N/A
 //    <1> inner_radius >= 0.0
 //    <2> inner_radius <= outer_radius
 //    <3> isUnitSphere(base_model)
 //  Returns: N/A
-//  Side Effect: A new Asteroid is created at position position.
-//               It has a random mesh based on model base_model
-//               and with its surface radius always in the
-//               interval [inner_radius, outer_radius].  The new
-//               Asteroid has a random orientation and
-//               rotational velocity.
+//  Side Effect: A new Asteroid is created at position position
+//               with velocity velocity.  It has a random mesh
+//               based on model base_model and with its surface
+//               radius always in the interval
+//               [inner_radius, outer_radius].  The new Asteroid
+//               has a random orientation and rotational
+//               velocity.
 //
 	Asteroid (const ObjLibrary::Vector3& position,
+	          const ObjLibrary::Vector3& velocity,
 	          double inner_radius,
 	          double outer_radius,
 	          const ObjLibrary::ObjModel& base_model);
@@ -119,49 +145,6 @@ public:
 	Asteroid (const Asteroid& to_copy) = default;
 	~Asteroid () = default;
 	Asteroid& operator= (const Asteroid& to_copy) = default;
-
-//
-//  isInitialized
-//
-//  Purpose: To determine whether this Asteroid has been
-//           intialized.
-//  Parameter(s): N/A
-//  Preconditions: N/A
-//  Returns: Whether this Asteroid has been initialized.
-//  Side Effect: N/A
-//
-	bool isInitialized () const
-	{
-		return m_display_list.isReady();
-	}
-
-//
-//  getRadius
-//
-//  Purpose: To determine the outer radius of this Asteroid.
-//  Parameter(s): N/A
-//  Preconditions:
-//    <1> isInitialized()
-//  Returns: The outer radius of this Asteroid.
-//  Side Effect: N/A
-//
-	double getRadius () const
-	{
-		return m_outer_radius;
-	}
-
-//
-//  draw
-//
-//  Purpose: To display this Asteroid.
-//  Parameter(s): N/A
-//  Preconditions:
-//    <1> isInitialized()
-//  Returns: N/A
-//  Side Effect: This Asteroid is displayed at its current
-//               position with its current rotation.
-//
-	void draw() const;
 
 //
 //  drawAxes
@@ -180,29 +163,22 @@ public:
 	void drawAxes (double length) const;
 
 //
-//  update
+//  updatePhysics
 //
-//  Purpose: To update this Asteroid for one time step.
-//  Parameter(s): N/A
+//  Purpose: To perform the physics updates for this Entity
+//           for one time step.
+//  Parameter(s):
+//    <1> delta_time: The length of the time step in seconds
+//    <2> black_hole: The black hole
 //  Preconditions:
 //    <1> isInitialized()
+//    <2> delta_time > 0.0
 //  Returns: N/A
-//  Side Effect: This Asteroid is updated for one time step.
-//                This includes rotation.
+//  Side Effect: This Entity is updated for one time step.  This
+//               includes rotation.
 //
-	void update(const double deltaTime);
-
-//
-//  calculateMass
-//
-//  Purpose: To calculate the mass of the asteroid
-//  Parameter(s): N/A
-//  Preconditions:
-//    <1> isInitialized()
-//  Returns: N/A
-//  Side Effect: N/A
-//
-	void computeMass();
+	virtual void updatePhysics (double delta_time,
+	                            const Entity& black_hole);
 
 private:
 //
@@ -218,11 +194,9 @@ private:
 
 private:
 	double m_inner_radius;
-	double m_outer_radius;
+	ObjLibrary::Vector3 m_random_noise_offset;
 	ObjLibrary::Vector3 m_rotation_axis;
 	double m_rotation_rate;
-	ObjLibrary::Vector3 m_random_noise_offset;
-	ObjLibrary::DisplayList m_display_list;
 };
 
 
