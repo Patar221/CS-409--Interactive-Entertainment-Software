@@ -133,7 +133,11 @@ Asteroid :: Asteroid (const ObjLibrary::Vector3& position, double inner_radius, 
 	Vector3 rejection = randomVector.getRejectionSafe(Vector3(0.0, 0.0, 0.0) - m_coords.getPosition());
 	Vector3 perpendicular = rejection.getNormalizedSafe();
 
-	velocity = perpendicular * computeCircularSpeed();	//Need to multiply random value to speed
+	float circularSpeedMultiplyer = rand() % (100 + 1);
+	circularSpeedMultiplyer /= 100;
+	circularSpeedMultiplyer += 0.5;
+
+	velocity = perpendicular * computeCircularSpeed() * circularSpeedMultiplyer;
 
 	assert(invariant());
 }

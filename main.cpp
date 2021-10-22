@@ -100,7 +100,6 @@ namespace
 	const microseconds DELTA_TIME(1000000 / UPDATES_PER_SECOND);
 
 	system_clock::time_point next_update_time;
-	const milliseconds FRAME_TIME_MIN(5);
 
 	const unsigned int MAXIMUM_UPDATES_PER_FRAME = 10;
 
@@ -363,25 +362,18 @@ void handleInput ()
 
 	if(key_pressed[' '])
 		player.accelerateForwardQuick(1, 1.0 * speedUp / UPDATES_PER_SECOND);
-		//g_camera.moveForward(MOVE_FAST_RATE);
 	if (key_pressed[';'] || key_pressed['\''])  // either key
 		player.accelerateForward(1, 1.0 * speedUp / UPDATES_PER_SECOND);
-		//g_camera.moveForward(MANOEUVER_RATE);
 	if(key_pressed['/'])
 		player.accelerateForward(-1, 1.0 * speedUp / UPDATES_PER_SECOND);
-		//g_camera.moveForward(-MANOEUVER_RATE);
 	if(key_pressed['w'] || key_pressed['e'])  // either key
 		player.accelerateUp(1, 1.0 * speedUp / UPDATES_PER_SECOND);
-		//g_camera.moveUp(MANOEUVER_RATE);
 	if(key_pressed['s'])
 		player.accelerateUp(-1, 1.0 * speedUp / UPDATES_PER_SECOND);
-		//g_camera.moveUp(-MANOEUVER_RATE);
 	if(key_pressed['d'])
 		player.accelerateRight(1, 1.0 * speedUp / UPDATES_PER_SECOND);
-		//g_camera.moveRight(MANOEUVER_RATE);
 	if(key_pressed['a'])
 		player.accelerateRight(-1, 1.0 * speedUp / UPDATES_PER_SECOND);
-		//g_camera.moveRight(-MANOEUVER_RATE);
 
 	//
 	//  Rotate camera
@@ -389,22 +381,16 @@ void handleInput ()
 
 	if(key_pressed['.'])
 		player.rotateAroundForward(TURN_RATE);
-		//g_camera.rotateAroundForward(TURN_RATE);
 	if(key_pressed[','])
 		player.rotateAroundForward(-TURN_RATE);
-		//g_camera.rotateAroundForward(-TURN_RATE);
 	if(key_pressed[KEY_PRESSED_UP])
 		player.rotateAroundRight(TURN_RATE);
-		//g_camera.rotateAroundRight(TURN_RATE);
 	if(key_pressed[KEY_PRESSED_DOWN])
 		player.rotateAroundRight(-TURN_RATE);
-		//g_camera.rotateAroundRight(-TURN_RATE);
 	if(key_pressed[KEY_PRESSED_LEFT])
 		player.rotateAroundUp(TURN_RATE);
-		//g_camera.rotateAroundUp(TURN_RATE);
 	if(key_pressed[KEY_PRESSED_RIGHT])
 		player.rotateAroundUp(-TURN_RATE);
-		//g_camera.rotateAroundUp(-TURN_RATE);
 
 	//
 	//  Other
